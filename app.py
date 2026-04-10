@@ -11,7 +11,7 @@ app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # ใส่ชื่อ TikTok ของคุณ (ไม่ต้องมี @)
-TIKTOK_USERNAME = "ใส่ชื่อ TikTok ของคุณ"
+TIKTOK_USERNAME = "ki4uto"
 client = TikTokLiveClient(unique_id=TIKTOK_USERNAME)
 
 top_donors = {} # เก็บข้อมูลเพชรสะสม
