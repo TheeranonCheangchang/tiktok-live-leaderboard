@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gacha Overlay</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600;700&display=swap');
+
+        body {
+            font-family: 'Kanit', sans-serif;
+            background-color: transparent;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+        }
+
+        .glass-panel {
+            background: linear-gradient(135deg, rgba(20, 25, 40, 0.85) 0%, rgba(10, 15, 25, 0.95) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            color: #fff;
+            padding: 25px;
+            min-width: 330px;
+            position: relative;
+        }
+
+        .glass-panel::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 20%;
+            width: 60%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent);
+            border-radius: 100%;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+
+        .leaderboard-container {
+            position: absolute;
+            top: 30px;
+            right: 30px;
+            opacity: 0;
+            transform: translateX(50px);
+            transition: all 0.6s cubic-bezier(0.25, 0.8, 0.25, 1);
+            pointer-events: none;
+        }
+
+        .leaderboard-container.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .panel-title {
+            text-align: center;
+            font-weight: 700;
+            font-size: 22px;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            border-bottom: 2px dashed rgba(255, 255, 255, 0.15);
+            padding-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .title-gold {
+            color: #ffd700;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8), 0 0 5px rgba(255, 215, 0, 0.3);
+        }
+
+        .item-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .list-item {
+            font-size: 17px;
+            margin: 14px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 500;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 12px 16px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            animation: slideIn 0.5s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .user-name {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 160px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .score-val {
+            font-weight: 700;
+            font-size: 18px;
+            letter-spacing: 0.5px;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 4px 10px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+        }
+
+        .rank-0 {
+            border-left: 4px solid #FFD700;
+            background: linear-gradient(90deg, rgba(255, 215, 0, 0.15) 0%, transparent 100%);
+        }
+        .rank-0 .user-name { color: #FFD700; }
+
+        .rank-1 {
+            border-left: 4px solid #E0E0E0;
+            background: linear-gradient(90deg, rgba(224, 224, 224, 0.1) 0%, transparent 100%);
+        }
+        .rank-1 .user-name { color: #E0E0E0; }
+
+        .rank-2 {
+            border-left: 4px solid #CD7F32;
+            background: linear-gradient(90deg, rgba(205, 127, 50, 0.1) 0%, transparent 100%);
+        }
+        .rank-2 .user-name { color: #CD7F32; }
+
+        .empty-text {
+            color: #888;
+            font-style: italic;
+            text-align: center;
+            font-size: 15px;
+            margin-top: 10px;
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Leaderboard Top Right -->
+    <div class="glass-panel leaderboard-container">
+        <div class="panel-title title-gold">🏆 TOP 3 Gifter</div>
+        <ul class="item-list" id="leaderboard">
+            <span class="empty-text">รอคนใจดีเปิดบิล...</span>
+        </ul>
+    </div>
+
+    <script>
+        // เชื่อมต่อกลับไปที่ Python Server
+        const socket = io('http://127.0.0.1:5000');
+
+        socket.on('connect', function () {
+            console.log('เชื่อมต่อกับระบบหลังบ้านสำเร็จ!');
+        });
+
+        let leaderboardTimeout = null;
+
+        // ดักรอ Event 'update_leaderboard'
+        socket.on('update_leaderboard', function (data) {
+            const lbContainer = document.querySelector('.leaderboard-container');
+            const lb = document.getElementById('leaderboard');
+            lb.innerHTML = '';
+
+            if (data.length === 0) {
+                lb.innerHTML = '<span class="empty-text">รอคนใจดีเปิดบิล...</span>';
+                return;
+            }
+
+            const rankClasses = ['rank-0', 'rank-1', 'rank-2'];
+            const medals = ['🥇', '🥈', '🥉'];
+
+            data.forEach((item, index) => {
+                const user = item[0];
+                const score = item[1];
+                const li = document.createElement('li');
+                li.className = 'list-item ' + rankClasses[index];
+                li.innerHTML = `<span class="user-name">${medals[index]} ${user}</span> <span class="score-val">💎 ${score}</span>`;
+                lb.appendChild(li);
+            });
+
+            // แสดงกระดานเมื่อมีข้อมูล
+            lbContainer.classList.add('show');
+
+            // เคลียร์เวลาเก่าถ้ามีของขวัญส่งมารัวๆ
+            if (leaderboardTimeout) {
+                clearTimeout(leaderboardTimeout);
+            }
+
+            // ตั้งเวลา 10 วินาทีให้กระดานหายไป
+            leaderboardTimeout = setTimeout(() => {
+                lbContainer.classList.remove('show');
+            }, 10000);
+        });
+    </script>
+</body>
+
+</html>
